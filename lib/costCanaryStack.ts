@@ -34,7 +34,7 @@ import {
 } from 'aws-cdk-lib/aws-ec2'
 import { Rule, Schedule } from 'aws-cdk-lib/aws-events'
 import { LambdaFunction } from 'aws-cdk-lib/aws-events-targets'
-import { Effect, PolicyStatement } from 'aws-cdk-lib/aws-iam'
+import { Effect, PolicyStatement, ServicePrincipal } from 'aws-cdk-lib/aws-iam'
 import { Key } from 'aws-cdk-lib/aws-kms'
 import { Runtime } from 'aws-cdk-lib/aws-lambda'
 import {
@@ -63,8 +63,9 @@ export class CostCanaryStack extends Stack {
         CC_VPC_Flow_Log: {
           destination: FlowLogDestination.toCloudWatchLogs(
             new LogGroup(this, 'Log', {
-              logGroupName: '/aws/vpc/flowlogs',
+              logGroupName: '/aws/vpc/flowlogs/CC_Demo',
               retention: RetentionDays.ONE_DAY,
+              removalPolicy: RemovalPolicy.DESTROY,
             })
           ),
           trafficType: FlowLogTrafficType.ALL,
@@ -75,7 +76,7 @@ export class CostCanaryStack extends Stack {
     // Create autoscaling group (ASG) with 10 instances and deploy to created VPC
     const asg = new AutoScalingGroup(this, 'CC_ASG', {
       vpc,
-      minCapacity: 10,
+      minCapacity: 20,
       notifications: [
         {
           topic: new Topic(this, 'CC_ASG_Topic', {
@@ -174,7 +175,7 @@ export class CostCanaryStack extends Stack {
 
     createMetricsLambda.addToRolePolicy(cloudwatchStatement)
 
-    // Rule scheduled to run every 5 minutes using EventBridge
+    // Rule scheduled to run every 1 minutes using EventBridge
     const scheduleLambdaRule = new Rule(this, 'CC_Schedule_Lambda_Rule', {
       schedule: Schedule.rate(Duration.minutes(1)),
     })
@@ -204,32 +205,47 @@ export class CostCanaryStack extends Stack {
 
     // ***************************************************************************************
 
-    const ec2CostAlarm = new Alarm(this, 'CC_Alarm', {
-      metric: ec2metric,
-      threshold: 0.25,
-      comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-      evaluationPeriods: 1,
-      alarmDescription: 'Alert if spending over 5 dollars',
-      alarmName: 'EC2_CC_Alarm',
-      actionsEnabled: true,
-    })
+    // const ec2CostAlarm = new Alarm(this, 'CC_Alarm', {
+    //   metric: ec2metric,
+    //   threshold: 0.1,
+    //   comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+    //   evaluationPeriods: 1,
+    //   alarmDescription: 'Alert if spending over 0.25 dollars',
+    //   alarmName: 'EC2_CC_Alarm',
+    //   actionsEnabled: true,
+    // })
 
-    // Create SNS topic for Alarm
-    const snsTopic = new Topic(this, 'EC2_CC_Alarm_Topic', {
-      topicName: 'EC2_CC_Alarm_Topic',
-      masterKey: new Key(this, 'EC2_CC_Alarm_Topic_Key', {
-        enableKeyRotation: true,
-        removalPolicy: RemovalPolicy.DESTROY,
-      }),
-    })
+    // // create KMS key for topic as a security best practice
+    // const snsTopicKey = new Key(this, 'EC2_CC_Alarm_Topic_Key', {
+    //   enableKeyRotation: true,
+    //   removalPolicy: RemovalPolicy.DESTROY,
+    // })
 
-    // Use CfnParamater as input by using cdk deploy --parameters CCEmailParam=YOUR_EMAIL
-    // Note, underscores are removed from parameter name when parameter is created
-    const emailAddress = new CfnParameter(this, 'CC_Email_Param')
+    // // Create SNS topic for Alarm
+    // const snsTopic = new Topic(this, 'EC2_CC_Alarm_Topic', {
+    //   topicName: 'EC2_CC_Alarm_Topic',
+    //   masterKey: snsTopicKey,
+    // })
 
-    snsTopic.addSubscription(new EmailSubscription(emailAddress.valueAsString))
+    // // Grant CloudWatch access to the key so it can publish to the topic
+    // const grantCloudWatchKeyAccess = new PolicyStatement({
+    //   sid: 'Allow_CloudWatch_for_CMK',
+    //   effect: Effect.ALLOW,
+    //   principals: [new ServicePrincipal('cloudwatch.amazonaws.com')],
+    //   actions: ['kms:Decrypt', 'kms:GenerateDataKey*'],
+    //   resources: ['*'],
+    // })
 
-    ec2CostAlarm.addAlarmAction(new SnsAction(snsTopic))
+    // // Add CloudWatch policy statement to the key policy
+    // snsTopicKey.addToResourcePolicy(grantCloudWatchKeyAccess)
+
+    // // Use CfnParamater as input by using cdk deploy --parameters CCEmailParam=YOUR_EMAIL
+    // // Note, underscores are removed from parameter name when parameter is created
+    // const emailAddress = new CfnParameter(this, 'CC_Email_Param')
+
+    // snsTopic.addSubscription(new EmailSubscription(emailAddress.valueAsString))
+
+    // ec2CostAlarm.addAlarmAction(new SnsAction(snsTopic))
 
     // ***************************************************************************************
 
