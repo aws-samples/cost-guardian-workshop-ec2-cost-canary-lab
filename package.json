@@ -24,7 +24,7 @@
     "typescript": "~4.8.3"
   },
   "dependencies": {
-    "aws-cdk-lib": "2.42.1",
+    "aws-cdk-lib": "2.184.0",
     "aws-lambda": "^1.0.7",
     "aws-sdk": "^2.1221.0",
     "cdk-nag": "^2.18.23",
